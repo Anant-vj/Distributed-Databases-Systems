@@ -38,7 +38,9 @@ export function mergeRow(a: RowState | undefined, b: RowState | undefined): RowS
   const cells: RowState["cells"] = {};
   const columns = Array.from(new Set([...Object.keys(a.cells), ...Object.keys(b.cells)])).sort();
   for (const column of columns) {
-    const merged = mergeCell(a.cells[column], b.cells[column]);
+    const aCell = Object.prototype.hasOwnProperty.call(a.cells, column) ? a.cells[column] : undefined;
+    const bCell = Object.prototype.hasOwnProperty.call(b.cells, column) ? b.cells[column] : undefined;
+    const merged = mergeCell(aCell, bCell);
     if (merged) cells[column] = merged;
   }
 
@@ -55,7 +57,9 @@ export function mergeTable(a: TableState | undefined, b: TableState | undefined)
   ).sort();
 
   for (const rowId of rowIds) {
-    const merged = mergeRow(a?.rows[rowId], b?.rows[rowId]);
+    const aRow = Object.prototype.hasOwnProperty.call(a?.rows ?? {}, rowId) ? a!.rows[rowId] : undefined;
+    const bRow = Object.prototype.hasOwnProperty.call(b?.rows ?? {}, rowId) ? b!.rows[rowId] : undefined;
+    const merged = mergeRow(aRow, bRow);
     if (merged) rows[rowId] = merged;
   }
   return { rows };

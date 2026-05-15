@@ -38,6 +38,11 @@ function reservationDot(row: RowState, column: string): Dot {
   return row.cells[column]?.dot ?? row.cells[Object.keys(row.cells).sort()[0]!]?.dot ?? { peerId: "", counter: 0 };
 }
 
+// Compares two reservations to deterministically select a winner for a unique value.
+// Determinism is achieved by strictly ordering the causal dots (peerId, counter).
+// If dots are identical (which shouldn't happen for distinct insertions unless peer clocks are deeply flawed), 
+// it falls back to the canonical string sorting of the primary keys.
+// This ensures all peers independently select the exact same winner without coordination.
 function compareReservations(
   a: { primaryKey: string; row: Record<string, Scalar>; dot: Dot },
   b: { primaryKey: string; row: Record<string, Scalar>; dot: Dot }
@@ -77,11 +82,18 @@ export class DefaultUniqueConstraintPolicy implements UniqueConstraintPolicy {
 
     const store = emptyUniqueReservationStore();
     for (const key of Array.from(groups.keys()).sort()) {
+      // Sort reservations using strict deterministic ordering.
+      // The first element becomes the globally agreed-upon winner.
       const rows = groups.get(key)!.sort(compareReservations);
       const parts = keyParts.get(key)!;
       const winner = rows[0]!;
       store.reservations[key] = winner.primaryKey;
 
+      // All other competing rows are marked as losers.
+      // Losers are preserved in `store.conflicts` rather than being dropped or deleted.
+      // This guarantees that if the winner is later deleted or changes its unique value,
+      // the next best loser deterministically and automatically takes its place during the next rebuild.
+      // This is how the system maintains eventual consistency for unique constraints without distributed locks.
       for (const loser of rows.slice(1)) {
         const conflictId = `${key}|loser:${loser.primaryKey}`;
         store.loserRows[`${parts.table}:${loser.primaryKey}`] = true;
