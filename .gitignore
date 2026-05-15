@@ -2,3 +2,8 @@ node_modules/
 dist/
 coverage/
 .DS_Store
+tests/p01-crdt/report.json
+tests/p01-crdt/stress-report.json
+tests/p01-crdt/**/__pycache__/
+bench-p01-crdt/
+_anvil-ref/

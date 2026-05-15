@@ -1,5 +1,5 @@
-import { setTombstone } from "../storage/row.js";
-import { materializeRow, rowMaxCounter } from "../storage/row.js";
+import { nextDot } from "../storage/metadata.js";
+import { materializeRow, rowMaxCounter, setCells, setTombstone } from "../storage/row.js";
 import type { PeerState, TableSchema } from "../storage/types.js";
 
 export type ForeignKeyMode = "cascade" | "tombstone" | "orphan";
@@ -10,10 +10,10 @@ export interface ForeignKeyPolicy {
 }
 
 export class DefaultForeignKeyPolicy implements ForeignKeyPolicy {
-  constructor(public readonly mode: ForeignKeyMode = "cascade") {}
+  constructor(public readonly mode: ForeignKeyMode = "tombstone") {}
 
   apply(peer: PeerState): boolean {
-    if (this.mode === "orphan") return false;
+    if (this.mode === "tombstone") return false;
 
     let changed = false;
     for (const childTableName of Object.keys(peer.schema.tables).sort()) {
@@ -39,16 +39,20 @@ export class DefaultForeignKeyPolicy implements ForeignKeyPolicy {
 
           const parentRow = parentTable.rows[parentKey];
           const parentMaterialized = parentRow ? materializeRow(parentRow, parentSchema as TableSchema) : null;
-          const parentWasDeleted = Boolean(parentRow?.tombstone) && !parentMaterialized;
-          const shouldTombstone =
-            this.mode === "tombstone" ? !parentMaterialized : parentWasDeleted;
+          const parentMissing = !parentMaterialized;
+          if (!parentMissing) continue;
 
-          if (!shouldTombstone) continue;
+          if (this.mode === "orphan") {
+            if (materializedChild[column] === "__orphan__") continue;
+            childTable.rows[childPk] = setCells(childRow, { [column]: "__orphan__" }, nextDot(peer));
+            changed = true;
+            continue;
+          }
 
           const counter = rowMaxCounter(childRow) + 1;
           childTable.rows[childPk] = setTombstone(childRow, {
             dot: { peerId: `system:fk:${this.mode}`, counter },
-            reason: this.mode === "cascade" ? "fk-cascade" : "fk-tombstone"
+            reason: "fk-cascade"
           });
           changed = true;
         }

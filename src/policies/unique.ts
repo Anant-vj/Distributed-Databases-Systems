@@ -1,7 +1,8 @@
+import { compareDots } from "../merge/dot.js";
 import { canonicalSerialize } from "../serialize/canonical.js";
 import { compareScalars, compareStrings } from "../serialize/stable.js";
 import { materializeRow } from "../storage/row.js";
-import type { RowState, Scalar, SchemaState, TableState } from "../storage/types.js";
+import type { Dot, RowState, Scalar, SchemaState, TableState } from "../storage/types.js";
 
 export interface UniqueConflictRecord {
   conflictId: string;
@@ -33,16 +34,22 @@ function reservationKey(table: string, column: string, value: Scalar): string {
   return `${table}.${column}:${canonicalSerialize(value)}`;
 }
 
+function reservationDot(row: RowState, column: string): Dot {
+  return row.cells[column]?.dot ?? row.cells[Object.keys(row.cells).sort()[0]!]?.dot ?? { peerId: "", counter: 0 };
+}
+
 function compareReservations(
-  a: { primaryKey: string; row: Record<string, Scalar> },
-  b: { primaryKey: string; row: Record<string, Scalar> }
+  a: { primaryKey: string; row: Record<string, Scalar>; dot: Dot },
+  b: { primaryKey: string; row: Record<string, Scalar>; dot: Dot }
 ): number {
+  const dotOrder = compareDots(a.dot, b.dot);
+  if (dotOrder !== 0) return dotOrder;
   return compareStrings(a.primaryKey, b.primaryKey);
 }
 
 export class DefaultUniqueConstraintPolicy implements UniqueConstraintPolicy {
   rebuild(schema: SchemaState, tables: Record<string, TableState>): UniqueReservationStore {
-    const groups = new Map<string, Array<{ primaryKey: string; row: Record<string, Scalar> }>>();
+    const groups = new Map<string, Array<{ primaryKey: string; row: Record<string, Scalar>; dot: Dot }>>();
     const keyParts = new Map<string, { table: string; column: string; value: Scalar }>();
 
     for (const tableName of Object.keys(schema.tables).sort()) {
@@ -52,13 +59,17 @@ export class DefaultUniqueConstraintPolicy implements UniqueConstraintPolicy {
 
       const uniqueColumns = tableSchema.columnOrder.filter((column) => tableSchema.columns[column]?.unique);
       for (const primaryKey of Object.keys(table.rows).sort()) {
-        const row = materializeRow(table.rows[primaryKey] as RowState, tableSchema);
+        const rowState = table.rows[primaryKey] as RowState;
+        const row = materializeRow(rowState, tableSchema);
         if (!row) continue;
 
         for (const column of uniqueColumns) {
           const value = row[column] ?? null;
           const key = reservationKey(tableName, column, value);
-          groups.set(key, [...(groups.get(key) ?? []), { primaryKey, row }]);
+          groups.set(key, [
+            ...(groups.get(key) ?? []),
+            { primaryKey, row, dot: reservationDot(rowState, column) }
+          ]);
           keyParts.set(key, { table: tableName, column, value });
         }
       }

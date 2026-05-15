@@ -1,5 +1,5 @@
 import { snapshotHash as hashSnapshot } from "./serialize/canonical.js";
-import { canonicalize } from "./serialize/stable.js";
+import { canonicalize, hashCanonical } from "./serialize/stable.js";
 import { DefaultForeignKeyPolicy, type ForeignKeyPolicy } from "./policies/foreignKeys.js";
 import {
   DefaultUniqueConstraintPolicy,
@@ -37,7 +37,7 @@ export class LocalFirstEngine {
 
   constructor(options: EngineOptions = {}) {
     this.uniquePolicy = options.uniquePolicy ?? new DefaultUniqueConstraintPolicy();
-    this.foreignKeyPolicy = options.foreignKeyPolicy ?? new DefaultForeignKeyPolicy("cascade");
+    this.foreignKeyPolicy = options.foreignKeyPolicy ?? new DefaultForeignKeyPolicy("tombstone");
   }
 
   openPeer(peerId: string): PeerState {
@@ -90,7 +90,27 @@ export class LocalFirstEngine {
   }
 
   snapshotHash(peerId: string): string {
+    return hashCanonical(this.snapshotTables(peerId));
+  }
+
+  snapshotHashInternal(peerId: string): string {
     return hashSnapshot(this.replicatedSnapshot(this.getPeer(peerId)));
+  }
+
+  snapshotTables(peerId: string): Record<string, Array<Record<string, Scalar>>> {
+    const peer = this.getPeer(peerId);
+    const tables: Record<string, Array<Record<string, Scalar>>> = {};
+    for (const tableName of Object.keys(peer.schema.tables).sort()) {
+      const schema = peer.schema.tables[tableName]!;
+      tables[tableName] = selectRows(peer, {
+        type: "select",
+        table: tableName,
+        columns: "*",
+        conditions: [],
+        orderBy: [{ column: schema.primaryKey, direction: "asc" }]
+      });
+    }
+    return tables;
   }
 
   snapshotState(peerId: string): EngineSnapshot {

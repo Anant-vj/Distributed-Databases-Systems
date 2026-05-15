@@ -6,8 +6,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
+    "test:all": "python tests/run_all.py",
     "test:watch": "vitest",
-    "demo": "tsx demo/reference-trace.ts"
+    "demo": "tsx demo/reference-trace.ts",
+    "demo:annex-a": "tsx demo/annex-a-reference.ts",
+    "bench:bridge": "tsx src/cli/bench-bridge.ts",
+    "bench:p01": "python tests/p01-crdt/run.py --adapter adapters.myteam:Engine --fk-policy tombstone --out tests/p01-crdt/report.json"
   },
   "engines": {
     "node": ">=22"

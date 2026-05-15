@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createReadyEngine, referenceSchemaSql, rows } from "./helpers.js";
 import { createEngine } from "../adapter.js";
+import { DefaultForeignKeyPolicy } from "../policies/foreignKeys.js";
 
 describe("local-first relational engine", () => {
   it("merges concurrent inserts from different peers", () => {
@@ -41,7 +42,11 @@ describe("local-first relational engine", () => {
   });
 
   it("resolves delete-parent vs insert-child with cascade tombstone metadata", () => {
-    const engine = createReadyEngine();
+    const engine = createEngine({ foreignKeyPolicy: new DefaultForeignKeyPolicy("cascade") });
+    for (const peer of ["a", "b"]) {
+      engine.openPeer(peer);
+      engine.applySchema(peer, referenceSchemaSql);
+    }
     engine.execute("a", "INSERT INTO users (id, email, name) VALUES (?, ?, ?)", [
       "u1",
       "user@example.test",
